@@ -10,7 +10,7 @@ type Options struct {
 	Password string
 	// BaseURL is the URL of the Feedzai Pulse website, for example
 	// https://feedzai-pulse-stg.voyagerinnovation.com
-	BaseURL  string
+	BaseURL string
 	// Timeout specifies a time limit for requests made by the client.
-	Timeout  time.Duration
+	Timeout time.Duration
 }

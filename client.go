@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"os"
+	"strings"
 )
 
 // Client is wrapper for Feedzai Pulse API.
@@ -36,7 +37,8 @@ func NewClient(options *Options) (*Client, error) {
 		return nil, err
 	}
 
-	loginUrl := options.BaseURL + "/pulseviews/api/sessions"
+	baseURL := strings.TrimRight(options.BaseURL, "/")
+	loginUrl := baseURL + "/pulseviews/api/sessions"
 
 	loginReq, err := http.NewRequest("POST", loginUrl, bytes.NewBuffer(credsPayload))
 	if err != nil {
@@ -59,7 +61,7 @@ func NewClient(options *Options) (*Client, error) {
 
 	return &Client{
 		httpClient: httpClient,
-		baseURL:    options.BaseURL,
+		baseURL:    baseURL,
 	}, nil
 }
 
