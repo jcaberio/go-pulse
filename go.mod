@@ -1,3 +1,3 @@
-module code.corp.voyager.ph/jorick.caberio/go-pulse
+module github.com/jcaberio/go-pulse
 
 go 1.14

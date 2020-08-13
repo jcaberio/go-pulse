@@ -4,9 +4,9 @@ HTTP client for Feedzai's API
 #### usage
 
 ```
-import "code.corp.voyager.ph/jorick.caberio/go-pulse"
+import "github.com/jcaberio/go-pulse"
 
-client, err := pulse.NewClient(&pulse.Options{
+client, err := pulse.New(&pulse.Options{
     Username:   "firstname.lastname@paymaya.com",
     Password:   "yourpassword",
     BaseURL:    "https://feedzai-pulse-stg.voyagerinnovation.com",
