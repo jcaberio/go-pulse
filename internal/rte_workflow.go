@@ -27,7 +27,7 @@ type Actions struct {
 	Params []interface{} `json:"params"`
 }
 type Advancedproperties struct {
-    Numbereventstoragesplits string `json:"numberEventStorageSplits"`
+	Numbereventstoragesplits string `json:"numberEventStorageSplits"`
 }
 type Filter struct {
 	Fields   []string `json:"fields"`
@@ -66,11 +66,11 @@ type Config struct {
 	Partitionkeys       []string           `json:"partitionKeys"`
 }
 type Outcomes struct {
-	Type              string   `json:"@type"`
-	Defaultvalue      bool     `json:"defaultValue"`
-	ID                string   `json:"id"`
-	Label             string   `json:"label"`
-	Categoricalvalues []string `json:"categoricalValues,omitempty"`
+	Type              string      `json:"@type"`
+	Defaultvalue      interface{} `json:"defaultValue"`
+	ID                string      `json:"id"`
+	Label             string      `json:"label"`
+	Categoricalvalues []string    `json:"categoricalValues,omitempty"`
 }
 type Outcomeconfig struct {
 	Outcomes []Outcomes `json:"outcomes"`

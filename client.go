@@ -427,43 +427,43 @@ func (c *Client) update() error {
 }
 
 func (c *Client) Restart() error {
-    rteURL := fmt.Sprintf("%s/pulseviews/api/apps/paymaya/rte_workflows/paged?limit=1&_=%d",
-    		c.baseURL, (time.Now().UnixNano() / int64(time.Millisecond)))
+	rteURL := fmt.Sprintf("%s/pulseviews/api/apps/paymaya/rte_workflows/paged?limit=1&_=%d",
+		c.baseURL, (time.Now().UnixNano() / int64(time.Millisecond)))
 
-    resp, err := c.get(rteURL)
-    if err != nil {
-        return err
-    }
-    defer resp.Body.Close()
-    body, err := ioutil.ReadAll(resp.Body)
-    if err != nil {
-        return err
-    }
-    var rteWorkflow internal.RteWorkflow
-    if err := json.Unmarshal(body, &rteWorkflow); err != nil {
-        return err
-    }
-    log.Printf("%s\n", body)
+	resp, err := c.get(rteURL)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	var rteWorkflow internal.RteWorkflow
+	if err := json.Unmarshal(body, &rteWorkflow); err != nil {
+		return err
+	}
+	log.Printf("%s\n", body)
 
-    items := rteWorkflow.Items
-    if len(items) != 0 {
-        item := items[0]
-        payload, err := json.Marshal(item)
-        if err != nil {
-        	return err
-        }
+	items := rteWorkflow.Items
+	if len(items) != 0 {
+		item := items[0]
+		payload, err := json.Marshal(item)
+		if err != nil {
+			return err
+		}
 		log.Printf("%s\n", payload)
 
-        workflowURL := fmt.Sprintf("%s/pulseviews/api/apps/paymaya/rte_workflows/workflow", c.baseURL)
-        resp, err := c.put(workflowURL, payload)
-        if err != nil {
-            return err
-        }
-        defer resp.Body.Close()
-        if resp.StatusCode != http.StatusOK {
-            return errors.New("pulse: failed saving workflow")
-        }
-    }
+		workflowURL := fmt.Sprintf("%s/pulseviews/api/apps/paymaya/rte_workflows/workflow", c.baseURL)
+		resp, err := c.put(workflowURL, payload)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return errors.New("pulse: failed saving workflow")
+		}
+	}
 
-    return c.update()
+	return c.update()
 }
