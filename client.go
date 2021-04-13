@@ -443,16 +443,16 @@ func (c *Client) Restart() error {
     if err := json.Unmarshal(body, &rteWorkflow); err != nil {
         return err
     }
-    log.Printf("%v\n", rteWorkflow)
+    log.Printf("%v\n", body)
 
     items := rteWorkflow.Items
     if len(items) != 0 {
         item := items[0]
-        log.Printf("%v\n", item)
         payload, err := json.Marshal(item)
         if err != nil {
         	return err
         }
+		log.Printf("%v\n", payload)
 
         workflowURL := fmt.Sprintf("%s/pulseviews/api/apps/paymaya/rte_workflows/workflow", c.baseURL)
         resp, err := c.put(workflowURL, payload)
