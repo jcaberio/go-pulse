@@ -246,36 +246,7 @@ func (c *Client) ImportResource(zipFile, workflowName, workflowElement string) e
 		errors.New("pulse: failed partial commit")
 	}
 
-	updateRequest := &internal.PublishRequest{
-		Async:        true,
-		FullReload:   true,
-		Rolling:      true,
-		SkipRecovery: false,
-	}
-	updatePayload, err := json.Marshal(updateRequest)
-	if err != nil {
-		return err
-	}
-
-	updateURL := fmt.Sprintf("%s/pulseviews/api/apps/paymaya/lifecycle/update", c.baseURL)
-
-	updateResp, err := c.post(updateURL, updatePayload)
-	if err != nil {
-		return err
-	}
-	defer updateResp.Body.Close()
-
-	body, err := ioutil.ReadAll(updateResp.Body)
-	if err != nil {
-		return err
-	}
-	var update internal.UpdateResponse
-
-	if err := json.Unmarshal(body, &update); err != nil {
-		return err
-	}
-
-	return nil
+	return c.Restart()
 }
 
 func (c *Client) partialImportPrepare(zipFile string) (*internal.PartialImportPrepareResponse, error) {
@@ -407,5 +378,39 @@ func (c *Client) ImportApp(filename string) error {
 	if startResp.StatusCode != http.StatusOK {
 		return errors.New("pulse: failed to start publish")
 	}
+	return nil
+}
+
+func (c *Client) Restart() error {
+
+	updateRequest := &internal.PublishRequest{
+		Async:        true,
+		FullReload:   true,
+		Rolling:      true,
+		SkipRecovery: false,
+	}
+	updatePayload, err := json.Marshal(updateRequest)
+	if err != nil {
+		return err
+	}
+
+	updateURL := fmt.Sprintf("%s/pulseviews/api/apps/paymaya/lifecycle/update", c.baseURL)
+
+	updateResp, err := c.post(updateURL, updatePayload)
+	if err != nil {
+		return err
+	}
+	defer updateResp.Body.Close()
+
+	body, err := ioutil.ReadAll(updateResp.Body)
+	if err != nil {
+		return err
+	}
+	var update internal.UpdateResponse
+
+	if err := json.Unmarshal(body, &update); err != nil {
+		return err
+	}
+
 	return nil
 }
