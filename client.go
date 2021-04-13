@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"net/http/cookiejar"
@@ -67,6 +68,16 @@ func New(options *Options) (*Client, error) {
 
 func (c *Client) post(url string, payload []byte) (*http.Response, error) {
 	request, err := http.NewRequest("POST", url, bytes.NewBuffer(payload))
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("x-requested-with", "XMLHttpRequest")
+	request.Header.Set("content-type", "application/json")
+	return c.httpClient.Do(request)
+}
+
+func (c *Client) put(url string, payload []byte) (*http.Response, error) {
+	request, err := http.NewRequest("PUT", url, bytes.NewBuffer(payload))
 	if err != nil {
 		return nil, err
 	}
@@ -246,7 +257,7 @@ func (c *Client) ImportResource(zipFile, workflowName, workflowElement string) e
 		errors.New("pulse: failed partial commit")
 	}
 
-	return c.Restart()
+	return c.update()
 }
 
 func (c *Client) partialImportPrepare(zipFile string) (*internal.PartialImportPrepareResponse, error) {
@@ -381,7 +392,7 @@ func (c *Client) ImportApp(filename string) error {
 	return nil
 }
 
-func (c *Client) Restart() error {
+func (c *Client) update() error {
 
 	updateRequest := &internal.PublishRequest{
 		Async:        true,
@@ -413,4 +424,46 @@ func (c *Client) Restart() error {
 	}
 
 	return nil
+}
+
+func (c *Client) Restart() error {
+    rteURL := fmt.Sprintf("%s/pulseviews/api/apps/paymaya/rte_workflows/paged?limit=1&_=%d",
+    		c.baseURL, (time.Now().UnixNano() / int64(time.Millisecond)))
+
+    resp, err := c.get(rteURL)
+    if err != nil {
+        return err
+    }
+    defer resp.Body.Close()
+    body, err := ioutil.ReadAll(resp.Body)
+    if err != nil {
+        return err
+    }
+    var rteWorkflow internal.RteWorkflow
+    if err := json.Unmarshal(body, &rteWorkflow); err != nil {
+        return err
+    }
+    log.Printf("%v\n", rteWorkflow)
+
+    items := rteWorkflow.Items
+    if len(items) != 0 {
+        item := items[0]
+        log.Printf("%v\n", item)
+        payload, err := json.Marshal(item)
+        if err != nil {
+        	return err
+        }
+
+        workflowURL := fmt.Sprintf("%s/pulseviews/api/apps/paymaya/rte_workflows/workflow", c.baseURL)
+        resp, err := c.put(workflowURL, payload)
+        if err != nil {
+            return err
+        }
+        defer resp.Body.Close()
+        if resp.StatusCode != http.StatusOK {
+            return errors.New("pulse: failed saving workflow")
+        }
+    }
+
+    return c.update()
 }
