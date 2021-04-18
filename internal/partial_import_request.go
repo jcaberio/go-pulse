@@ -3,7 +3,7 @@ package internal
 type PartialImportSchemasRequest struct {
 	Lists         []List         `json:"lists"`
 	Models        []interface{}  `json:"models"`
-	Plans         []interface{}  `json:"plans"`
+	Plans         []Plans        `json:"plans"`
 	RulesProjects []RulesProject `json:"rulesProjects"`
 }
 
@@ -35,4 +35,17 @@ type RulesProject struct {
 	DestinationId   string     `json:"destinationId,omitempty"`
 	Snapshots       []Snapshot `json:"snapshots,omitempty"`
 	Type            string     `json:"type,omitempty"`
+}
+
+type Plans struct {
+	Desc            string       `json:"desc,omitempty"`
+	Executions      []Executions `json:"executions,omitempty"`
+	ID              string       `json:"id,omitempty"`
+	DestinationId   string       `json:"destinationId,omitempty"`
+	DestinationDesc string       `json:"destinationDesc,omitempty"`
+}
+
+type Executions struct {
+	Desc string `json:"desc,omitempty"`
+	ID   string `json:"id"`
 }

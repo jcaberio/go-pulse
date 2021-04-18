@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"mime/multipart"
 	"net/http"
 	"net/http/cookiejar"
@@ -23,9 +22,10 @@ import (
 type Client struct {
 	httpClient *http.Client
 	baseURL    string
+	appName    string
 }
 
-// NewClient returns a client, error will be non-nil if the authentication failed.
+// New returns a client, error will be non-nil if the authentication failed.
 func New(options *Options) (*Client, error) {
 	cookieJar, err := cookiejar.New(nil)
 	if err != nil {
@@ -39,6 +39,7 @@ func New(options *Options) (*Client, error) {
 	client := &Client{
 		httpClient: httpClient,
 		baseURL:    strings.TrimRight(options.BaseURL, "/"),
+		appName:    options.AppName,
 	}
 
 	creds := newCredentials(options.Username, options.Password)
@@ -66,34 +67,37 @@ func New(options *Options) (*Client, error) {
 	return client, nil
 }
 
-func (c *Client) post(url string, payload []byte) (*http.Response, error) {
-	request, err := http.NewRequest("POST", url, bytes.NewBuffer(payload))
+func (c *Client) do(url string, method string, payload []byte) (*http.Response, error) {
+	var body io.Reader
+	if method == http.MethodGet || method == http.MethodDelete {
+		body = nil
+	} else {
+		body = bytes.NewBuffer(payload)
+	}
+
+	request, err := http.NewRequest(method, url, body)
 	if err != nil {
 		return nil, err
 	}
 	request.Header.Set("x-requested-with", "XMLHttpRequest")
 	request.Header.Set("content-type", "application/json")
 	return c.httpClient.Do(request)
+}
+
+func (c *Client) post(url string, payload []byte) (*http.Response, error) {
+	return c.do(url, http.MethodPost, payload)
 }
 
 func (c *Client) put(url string, payload []byte) (*http.Response, error) {
-	request, err := http.NewRequest("PUT", url, bytes.NewBuffer(payload))
-	if err != nil {
-		return nil, err
-	}
-	request.Header.Set("x-requested-with", "XMLHttpRequest")
-	request.Header.Set("content-type", "application/json")
-	return c.httpClient.Do(request)
+	return c.do(url, http.MethodPut, payload)
 }
 
 func (c *Client) get(url string) (*http.Response, error) {
-	request, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
-	request.Header.Set("x-requested-with", "XMLHttpRequest")
-	request.Header.Set("content-type", "application/json")
-	return c.httpClient.Do(request)
+	return c.do(url, http.MethodGet, nil)
+}
+
+func (c *Client) delete(url string) (*http.Response, error) {
+	return c.do(url, http.MethodDelete, nil)
 }
 
 // UploadList uploads the contents of a CSV file named filename to a Pulse list identified with listID.
@@ -109,8 +113,8 @@ func (c *Client) UploadList(filename string, listID string) error {
 		return errors.New("pulse: empty listID")
 	}
 
-	uploadUrl := fmt.Sprintf("%s/pulseviews/api/apps/paymaya/managedlists/%s/managedlistitems",
-		c.baseURL, listID)
+	uploadUrl := fmt.Sprintf("%s/pulseviews/api/apps/%s/managedlists/%s/managedlistitems",
+		c.baseURL, c.appName, listID)
 
 	uploadResp, err := c.upload(filename, uploadUrl)
 	if err != nil {
@@ -130,8 +134,8 @@ func (c *Client) UploadList(filename string, listID string) error {
 }
 
 func (c *Client) DownloadList(filename string, listID string) error {
-	downloadUrl := fmt.Sprintf("%s/pulseviews/api/apps/paymaya/managedlists/%s/managedlistitems/csv",
-		c.baseURL, listID)
+	downloadUrl := fmt.Sprintf("%s/pulseviews/api/apps/%s/managedlists/%s/managedlistitems/csv",
+		c.baseURL, c.appName, listID)
 	return c.download(filename, downloadUrl)
 }
 
@@ -184,11 +188,79 @@ func (c *Client) download(filename, url string) error {
 }
 
 func (c *Client) ExportApp(filename string) error {
-	exportUrl := c.baseURL + "/pulseviews/api/apps/paymaya/export"
+	exportUrl := fmt.Sprintf("%s/pulseviews/api/apps/%s/export", c.baseURL, c.appName)
 	return c.download(filename, exportUrl)
 }
 
-func (c *Client) ImportResource(zipFile, workflowName, workflowElement string) error {
+func (c *Client) importPlan(zipFile string) error {
+
+	// partialImportPrepare
+	partialResp, err := c.partialImportPrepare(zipFile)
+	if err != nil {
+		return err
+	}
+
+	// partialImportCheckSchemas
+	schemaRequestPlans := make([]internal.Plans, len(partialResp.Plans))
+	for i, plan := range partialResp.Plans {
+		execs := make([]internal.Executions, len(plan.Executions))
+
+		for j, exec := range plan.Executions {
+			execs[j] = internal.Executions{
+				ID: exec.ID,
+			}
+		}
+
+		schemaRequestPlans[i] = internal.Plans{
+			Executions:      execs,
+			ID:              plan.ID,
+			DestinationId:   plan.ID,
+			DestinationDesc: plan.Desc,
+		}
+	}
+
+	schemaRequest := &internal.PartialImportSchemasRequest{
+		Lists:         []internal.List{},
+		Models:        partialResp.Models,
+		Plans:         schemaRequestPlans,
+		RulesProjects: partialResp.RulesProjects,
+	}
+
+	schemaPayload, err := json.Marshal(schemaRequest)
+	if err != nil {
+		return err
+	}
+
+	checkSchemaURL := fmt.Sprintf("%s/pulseviews/api/apps/%s/partialImportCheckSchemas/%s",
+		c.baseURL, c.appName, partialResp.ImportID)
+	checkSchemaResp, err := c.post(checkSchemaURL, schemaPayload)
+	if err != nil {
+		return err
+	}
+	defer checkSchemaResp.Body.Close()
+
+	if checkSchemaResp.StatusCode != http.StatusOK {
+		return errors.New("pulse: failed schema validation")
+	}
+
+	// partialImportCommit
+	commitURL := fmt.Sprintf("%s/pulseviews/api/apps/%s/partialImportCommit/%s",
+		c.baseURL, c.appName, partialResp.ImportID)
+	commitResp, err := c.post(commitURL, schemaPayload)
+	if err != nil {
+		return err
+	}
+	defer commitResp.Body.Close()
+
+	if commitResp.StatusCode != http.StatusNoContent {
+		return errors.New("pulse: failed partial commit")
+	}
+	// update
+	return c.update()
+
+}
+
+func (c *Client) ImportRule(zipFile, workflowName, workflowElement string) error {
 	workflowElementID, err := c.getWorkflowElementID(workflowName, workflowElement)
 	if err != nil {
 		return err
@@ -233,8 +305,8 @@ func (c *Client) ImportResource(zipFile, workflowName, workflowElement string) e
 		return err
 	}
 
-	checkSchemaURL := fmt.Sprintf("%s/pulseviews/api/apps/paymaya/partialImportCheckSchemas/%s",
-		c.baseURL, partialResp.ImportID)
+	checkSchemaURL := fmt.Sprintf("%s/pulseviews/api/apps/%s/partialImportCheckSchemas/%s",
+		c.baseURL, c.appName, partialResp.ImportID)
 	checkSchemaResp, err := c.post(checkSchemaURL, schemaPayload)
 	if err != nil {
 		return err
@@ -245,8 +317,8 @@ func (c *Client) ImportResource(zipFile, workflowName, workflowElement string) e
 		return errors.New("pulse: failed schema validation")
 	}
 
-	commitURL := fmt.Sprintf("%s/pulseviews/api/apps/paymaya/partialImportCommit/%s",
-		c.baseURL, partialResp.ImportID)
+	commitURL := fmt.Sprintf("%s/pulseviews/api/apps/%s/partialImportCommit/%s",
+		c.baseURL, c.appName, partialResp.ImportID)
 	commitResp, err := c.post(commitURL, schemaPayload)
 	if err != nil {
 		return err
@@ -254,14 +326,15 @@ func (c *Client) ImportResource(zipFile, workflowName, workflowElement string) e
 	defer commitResp.Body.Close()
 
 	if commitResp.StatusCode != http.StatusNoContent {
-		errors.New("pulse: failed partial commit")
+		return errors.New("pulse: failed partial commit")
 	}
 
 	return c.update()
 }
 
 func (c *Client) partialImportPrepare(zipFile string) (*internal.PartialImportPrepareResponse, error) {
-	partialImportURL := c.baseURL + "/pulseviews/api/apps/paymaya/partialImportPrepare"
+	partialImportURL := fmt.Sprintf("%s/pulseviews/api/apps/%s/partialImportPrepare",
+		c.baseURL, c.appName)
 	resp, err := c.upload(zipFile, partialImportURL)
 	if err != nil {
 		return nil, err
@@ -282,8 +355,8 @@ func (c *Client) partialImportPrepare(zipFile string) (*internal.PartialImportPr
 }
 
 func (c *Client) getWorkflowElementID(workflowName, workflowElementName string) (string, error) {
-	rteURL := fmt.Sprintf("%s/pulseviews/api/apps/paymaya/rte_workflows/paged?limit=5&sort_by=desc&order=ASC&_=%d",
-		c.baseURL, (time.Now().UnixNano() / int64(time.Millisecond)))
+	rteURL := fmt.Sprintf("%s/pulseviews/api/apps/%s/rte_workflows/paged?limit=5&sort_by=desc&order=ASC&_=%d",
+		c.baseURL, c.appName, time.Now().UnixNano()/int64(time.Millisecond))
 
 	resp, err := c.get(rteURL)
 	if err != nil {
@@ -312,14 +385,9 @@ func (c *Client) getWorkflowElementID(workflowName, workflowElementName string) 
 	return "", fmt.Errorf("pulse: workflowElementId for %s not found", workflowElementName)
 }
 
-func (c *Client) DeleteApp(appName string) error {
-	deleteAppURL := fmt.Sprintf("%s/pulseviews/api/apps/%s", c.baseURL, appName)
-	request, err := http.NewRequest("DELETE", deleteAppURL, nil)
-	if err != nil {
-		return err
-	}
-	request.Header.Set("x-requested-with", "XMLHttpRequest")
-	_, err = c.httpClient.Do(request)
+func (c *Client) DeleteApp() error {
+	url := fmt.Sprintf("%s/pulseviews/api/apps/%s", c.baseURL, c.appName)
+	_, err := c.delete(url)
 	return err
 }
 
@@ -359,111 +427,176 @@ func (c *Client) ImportApp(filename string) error {
 		return err
 	}
 
-	importURL := fmt.Sprintf("%s/pulseviews/api/apps/import", c.baseURL)
-	resp, err = c.post(importURL, importReqPayload)
+	url := fmt.Sprintf("%s/pulseviews/api/apps/import", c.baseURL)
+
+	err = c.submit(url, http.MethodPost, importReqPayload, http.StatusOK, "pulse: failed to import app")
 	if err != nil {
 		return err
 	}
-	if resp.StatusCode != http.StatusOK {
-		return errors.New("pulse: failed to import app")
-	}
 
-	startURL := fmt.Sprintf("%s/pulseviews/api/apps/paymaya/lifecycle/start", c.baseURL)
+	return c.start()
+}
 
-	startReq := &internal.PublishRequest{
+func (c *Client) lifecycle(cycle string) error {
+	url := fmt.Sprintf("%s/pulseviews/api/apps/%s/lifecycle/%s",
+		c.baseURL, c.appName, cycle)
+
+	req := &internal.PublishRequest{
 		Async:        true,
 		FullReload:   true,
 		Rolling:      true,
 		SkipRecovery: false,
 	}
-	startReqPayload, err := json.Marshal(startReq)
+	payload, err := json.Marshal(req)
 	if err != nil {
 		return err
 	}
 
-	startResp, err := c.post(startURL, startReqPayload)
+	err = c.submit(url, http.MethodPost, payload, http.StatusOK, "pulse: failed to publish")
 	if err != nil {
 		return err
-	}
-
-	if startResp.StatusCode != http.StatusOK {
-		return errors.New("pulse: failed to start publish")
 	}
 	return nil
+}
+
+func (c *Client) start() error {
+	return c.lifecycle("start")
 }
 
 func (c *Client) update() error {
-
-	updateRequest := &internal.PublishRequest{
-		Async:        true,
-		FullReload:   true,
-		Rolling:      true,
-		SkipRecovery: false,
-	}
-	updatePayload, err := json.Marshal(updateRequest)
-	if err != nil {
-		return err
-	}
-
-	updateURL := fmt.Sprintf("%s/pulseviews/api/apps/paymaya/lifecycle/update", c.baseURL)
-
-	updateResp, err := c.post(updateURL, updatePayload)
-	if err != nil {
-		return err
-	}
-	defer updateResp.Body.Close()
-
-	body, err := ioutil.ReadAll(updateResp.Body)
-	if err != nil {
-		return err
-	}
-	var update internal.UpdateResponse
-
-	if err := json.Unmarshal(body, &update); err != nil {
-		return err
-	}
-
-	return nil
+	return c.lifecycle("update")
 }
 
 func (c *Client) Restart() error {
-	rteURL := fmt.Sprintf("%s/pulseviews/api/apps/paymaya/rte_workflows/paged?limit=1&_=%d",
-		c.baseURL, (time.Now().UnixNano() / int64(time.Millisecond)))
-
-	resp, err := c.get(rteURL)
+	body, item, err := c.getWorkflowState()
 	if err != nil {
 		return err
 	}
+
+	payload, err := c.validate(body, item)
+	if err != nil {
+		return err
+	}
+
+	err = c.validateRestoreState(payload)
+	if err != nil {
+		return err
+	}
+
+	err = c.saveWorkflow(body)
+	if err != nil {
+		return err
+	}
+
+	return c.update()
+}
+
+func (c *Client) submit(url string, method string, body []byte, statusCode int, errMsg string) error {
+	var resp *http.Response
+	var err error
+	if method == http.MethodPost {
+		resp, err = c.post(url, body)
+	}
+	if method == http.MethodPut {
+		resp, err = c.put(url, body)
+	}
+
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode != statusCode {
+		return errors.New(errMsg)
+	}
+	return nil
+}
+
+func (c *Client) saveWorkflow(body []byte) error {
+	url := fmt.Sprintf("%s/pulseviews/api/apps/%s/rte_workflows/workflow", c.baseURL, c.appName)
+	return c.submit(url, http.MethodPut, body, http.StatusOK, "pulse: failed saving workflow")
+}
+
+func (c *Client) validateRestoreState(payload []byte) error {
+	url := fmt.Sprintf("%s/pulseviews/api/apps/%s/rte_workflows/validaterestorestate",
+		c.baseURL, c.appName)
+
+	return c.submit(url, http.MethodPost, payload, http.StatusNoContent, "pulse: failed validating restore state")
+}
+
+func (c *Client) validate(body []byte, item internal.Item) ([]byte, error) {
+	url := fmt.Sprintf("%s/pulseviews/api/apps/%s/rte_workflows/validate",
+		c.baseURL, c.appName)
+
+	err := c.submit(url, http.MethodPost, body, http.StatusOK, "pulse: failed validating workflow")
+	if err != nil {
+		return nil, err
+	}
+
+	payload, err := json.Marshal(internal.ValidateRestoreState{
+		item.Config.RecoveryExpression})
+	if err != nil {
+		return nil, err
+	}
+	return payload, nil
+}
+
+func (c *Client) getWorkflowState() ([]byte, internal.Item, error) {
+	rteURL := fmt.Sprintf("%s/pulseviews/api/apps/%s/rte_workflows/workflow?_=%d",
+		c.baseURL, c.appName, time.Now().UnixNano()/int64(time.Millisecond))
+
+	resp, err := c.get(rteURL)
+	if err != nil {
+		return nil, internal.Item{}, err
+	}
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, internal.Item{}, err
+	}
+	var item internal.Item
+	if err := json.Unmarshal(body, &item); err != nil {
+		return nil, internal.Item{}, err
+	}
+	return body, item, nil
+}
+
+func (c *Client) IsPublishInProgress() bool {
+	url := fmt.Sprintf("%s/pulseviews/api/apps/%s/lifecycle/currentOperationProgress?_=%d",
+		c.baseURL, c.appName, time.Now().UnixNano()/int64(time.Millisecond))
+	resp, _ := c.get(url)
+	return resp.StatusCode == http.StatusOK
+}
+
+func (c *Client) Abort() error {
+	url := fmt.Sprintf("%s/pulseviews/api/apps/%s/lifecycle/currentOperationProgress?_=%d",
+		c.baseURL, c.appName, time.Now().UnixNano()/int64(time.Millisecond))
+	resp, err := c.get(url)
+	if err != nil {
+		return err
+	}
+
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return err
 	}
-	var rteWorkflow internal.RteWorkflow
-	if err := json.Unmarshal(body, &rteWorkflow); err != nil {
-		return err
-	}
-	log.Printf("%s\n", body)
 
-	items := rteWorkflow.Items
-	if len(items) != 0 {
-		item := items[0]
-		payload, err := json.Marshal(item)
+	if resp.StatusCode == http.StatusOK {
+		var progress internal.ProgressResponse
+		if err := json.Unmarshal(body, &progress); err != nil {
+			return err
+		}
+
+		url := fmt.Sprintf("%s/pulseviews/api/apps/%s/lifecycle/cancel/%s",
+			c.baseURL, c.appName, progress.OperationId)
+
+		resp, err = c.post(url, []byte{})
 		if err != nil {
 			return err
 		}
-		log.Printf("%s\n", payload)
-
-		workflowURL := fmt.Sprintf("%s/pulseviews/api/apps/paymaya/rte_workflows/workflow", c.baseURL)
-		resp, err := c.put(workflowURL, payload)
-		if err != nil {
-			return err
-		}
-		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
-			return errors.New("pulse: failed saving workflow")
+			return errors.New("pulse: failed aborting publish")
 		}
 	}
-
-	return c.update()
+	return nil
 }

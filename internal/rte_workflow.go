@@ -27,17 +27,17 @@ type Actions struct {
 	Params []interface{} `json:"params"`
 }
 type Advancedproperties struct {
-	Numbereventstoragesplits string `json:"numberEventStorageSplits"`
+	NumberEventStorageSplits string `json:"numberEventStorageSplits"`
 }
 type Filter struct {
-	Fields   []string `json:"fields"`
-	Template string   `json:"template"`
+	Fields   []string `json:"fields,omitempty"`
+	Template string   `json:"template,omitempty"`
 }
 type Connections struct {
-	Filter   Filter `json:"filter,omitempty"`
-	ID       string `json:"id"`
-	Sinkid   string `json:"sinkId"`
-	Sourceid string `json:"sourceId"`
+	Filter   *Filter `json:"filter,omitempty"`
+	ID       string  `json:"id"`
+	SinkId   string  `json:"sinkId"`
+	SourceId string  `json:"sourceId"`
 }
 type Configuration struct {
 }
@@ -48,29 +48,30 @@ type Outputmapping struct {
 type Elements struct {
 	Type          string        `json:"@type"`
 	Configuration Configuration `json:"configuration"`
-	Dependencyid  string        `json:"dependencyId"`
+	DependencyId  string        `json:"dependencyId"`
 	Desc          string        `json:"desc"`
 	ID            string        `json:"id"`
-	Inputmapping  Inputmapping  `json:"inputMapping"`
+	InputMapping  Inputmapping  `json:"inputMapping"`
 	Metadata      string        `json:"metadata"`
-	Outcomeids    []interface{} `json:"outcomeIds"`
-	Outputmapping Outputmapping `json:"outputMapping"`
+	OutcomeIds    []interface{} `json:"outcomeIds"`
+	OutputMapping Outputmapping `json:"outputMapping"`
 }
 type Config struct {
-	Actionhandlers      []interface{}      `json:"actionHandlers"`
+	ActionHandlers      []interface{}      `json:"actionHandlers"`
 	Actions             []Actions          `json:"actions"`
-	Advancedproperties  Advancedproperties `json:"advancedProperties"`
+	AdvancedProperties  Advancedproperties `json:"advancedProperties"`
 	Connections         []Connections      `json:"connections"`
 	Elements            []Elements         `json:"elements"`
-	Eventstorageenabled bool               `json:"eventStorageEnabled"`
-	Partitionkeys       []string           `json:"partitionKeys"`
+	EventStorageEnabled bool               `json:"eventStorageEnabled"`
+	PartitionKeys       []string           `json:"partitionKeys"`
+	RecoveryExpression  string             `json:"recoveryExpression"`
 }
 type Outcomes struct {
 	Type              string      `json:"@type"`
-	Defaultvalue      interface{} `json:"defaultValue"`
+	DefaultValue      interface{} `json:"defaultValue"`
 	ID                string      `json:"id"`
 	Label             string      `json:"label"`
-	Categoricalvalues []string    `json:"categoricalValues,omitempty"`
+	CategoricalValues []string    `json:"categoricalValues,omitempty"`
 }
 type Outcomeconfig struct {
 	Outcomes []Outcomes `json:"outcomes"`
@@ -79,8 +80,12 @@ type Groups struct {
 	Jrmgtuwhfaznkb7Bvlzfjw int `json:"jrmgtUwhFazNKB7bVLZFJw"`
 }
 type Ownership struct {
-	Currentuserrights int           `json:"currentUserRights"`
+	CurrentUserRights int           `json:"currentUserRights"`
 	Groups            Groups        `json:"groups"`
-	Uservisiblegroups []interface{} `json:"userVisibleGroups"`
+	UserVisibleGroups []interface{} `json:"userVisibleGroups"`
 	Visibility        string        `json:"visibility"`
+}
+
+type ValidateRestoreState struct {
+	RecoveryExpression string `json:"recoveryExpression"`
 }

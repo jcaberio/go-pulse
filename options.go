@@ -11,6 +11,8 @@ type Options struct {
 	// BaseURL is the URL of the Feedzai Pulse website, for example
 	// https://feedzai-pulse-stg.voyagerinnovation.com
 	BaseURL string
+	// AppName is the name of the running Pulse application
+	AppName string
 	// Timeout specifies a time limit for requests made by the client.
 	Timeout time.Duration
 }
