@@ -100,6 +100,39 @@ func (c *Client) delete(url string) (*http.Response, error) {
 	return c.do(url, http.MethodDelete, nil)
 }
 
+// ListIds returns a array of managed list identifiers
+func (c *Client) ListIds() []string {
+	listIds := make([]string, 0)
+	offset := 0
+	isComplete := false
+
+	for !isComplete {
+		url := fmt.Sprintf("%s/pulseviews/api/apps/%s/managedlists/paged?limit=5&sort_by=desc&order=ASC&offset=%d&_=%d",
+			c.baseURL, c.appName, offset, time.Now().UnixNano()/int64(time.Millisecond))
+		resp, err := c.get(url)
+		if err != nil {
+			panic(err)
+		}
+		defer resp.Body.Close()
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			panic(body)
+		}
+		var managedList internal.ManagedList
+		if err := json.Unmarshal(body, &managedList); err != nil {
+			panic(err)
+		}
+
+		for _, item := range managedList.ListItems {
+			listIds = append(listIds, fmt.Sprintf("%s:%s", item.Desc, item.ID))
+		}
+		offset = len(listIds)
+		isComplete = len(listIds) == managedList.CollectionSize
+	}
+
+	return listIds
+}
+
 // UploadList uploads the contents of a CSV file named filename to a Pulse list identified with listID.
 // error will be non-nil of there are network issues, duplicate entries or the HTTP status
 // returned by Feedzai's API is not StatusNoContent.
@@ -113,7 +146,7 @@ func (c *Client) UploadList(filename string, listID string) error {
 		return errors.New("pulse: empty listID")
 	}
 
-	uploadUrl := fmt.Sprintf("%s/pulseviews/api/apps/%s/managedlists/%s/managedlistitems",
+	uploadUrl := fmt.Sprintf("%s/pulseviews/api/apps/%s/managedlists/%s/managedlistitems?operation=replaceall",
 		c.baseURL, c.appName, listID)
 
 	uploadResp, err := c.upload(filename, uploadUrl)
@@ -188,7 +221,7 @@ func (c *Client) download(filename, url string) error {
 }
 
 func (c *Client) ExportApp(filename string) error {
-	exportUrl := fmt.Sprintf("%s/pulseviews/api/apps/%s/export", c.baseURL, c.appName)
+	exportUrl := fmt.Sprintf("%s/pulseviews/api/apps/%s/export?excludeItems=true", c.baseURL, c.appName)
 	return c.download(filename, exportUrl)
 }
 
